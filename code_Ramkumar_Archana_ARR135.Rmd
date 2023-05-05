@@ -1,0 +1,1121 @@
+---
+title: "code_Ramkumar_Archana_ARR135"
+author: "Archana Ramkumar"
+date: "2023-04-18"
+output:
+  html_document:
+editor_options:
+  markdown:
+    wrap: 72
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Load Packages
+
+```{r load_packages}
+library(ggplot2)
+library(glmnet)
+library(leaps)
+library(MASS)
+library(caret)
+library(randomForest)
+library(tree)
+library(BART)
+library(gbm)
+library(gam)
+library(pls)
+```
+
+# Download data sets
+
+```{r load_datasets}
+## read the test and train datasets
+## will the absolute path run a different computer
+full_train <- read.csv("train.csv")
+full_test <- read.csv("test.csv")
+```
+
+# Exploratory Data Analysis (EDA)
+
+```{r}
+if_any_na <- sum(is.na(full_train))
+## no missing observations in the training set
+if_any_na
+
+## dimensions of train set
+dim(full_train)
+
+## for later use tree based models
+full_train_t <- full_train
+
+## for later use when the categorical variables have to either be numeric, ordered, or factor
+full_train_b <- full_train
+full_train_b$desc <- as.factor(full_train_b$desc)
+full_train_b$rooftype <- as.factor(full_train_b$rooftype)
+full_train_b$exteriorfinish <- as.factor(full_train_b$exteriorfinish)
+full_train_b$Location <- as.factor(full_train_b$Location)
+
+full_train_b <- subset(full_train_b, exteriorfinish != "Log")
+full_train_b <- subset(full_train_b, exteriorfinish != "Concrete")
+```
+
+Quantitative response: price
+
+Quantitative predictors: numstories, yearbuilt, totalrooms, bedrooms,
+bathrooms,fireplaces, sqft, lotarea, zipcode, AvgIncome, DistDowntown
+
+Qualitative predictors: id, desc, exteriorfinish, rooftype, Location, basement
+
+
+## Dealing with the categorical predictors
+
+```{r}
+## transform training set with certain categorical predictors into a df that has 
+## dummy variables instead of character values
+model_matrix <- model.matrix(price ~ . - id - 1, data = full_train)
+full_train_ <- as.data.frame(model_matrix)
+full_train_$id <- full_train$id
+full_train_$price <- full_train$price
+
+# reorder so that id and price are the first two columns respectively
+# put back into full_train
+full_train <- full_train_[c("id", "price", colnames(full_train_)[-c(1,2)])]
+full_train <- full_train[-c(28,29)]
+```
+
+## Summary Statistics
+```{r}
+summary(full_train)
+```
+
+
+## Range and sd of predictors and response
+```{r}
+## finding the mean, range, and sd of continuous predictors + response
+range(full_train$price)
+range(full_train$numstories)
+range(full_train$yearbuilt)
+range(full_train$totalrooms)
+range(full_train$bedrooms)
+range(full_train$bathrooms)
+range(full_train$fireplaces)
+range(full_train$sqft)
+range(full_train$lotarea)
+range(full_train$zipcode)
+range(full_train$AvgIncome)
+range(full_train$DistDowntown)
+
+
+sd(full_train$price)
+sd(full_train$numstories)
+sd(full_train$yearbuilt)
+sd(full_train$totalrooms)
+sd(full_train$bedrooms)
+sd(full_train$bathrooms)
+sd(full_train$fireplaces)
+sd(full_train$sqft)
+sd(full_train$lotarea)
+sd(full_train$zipcode)
+sd(full_train$AvgIncome)
+sd(full_train$DistDowntown)
+sd(full_train$`descMULTI-FAMILY`)
+sd(full_train$`descROWHOUSE`)
+sd(full_train$`descSINGLE FAMILY`)
+sd(full_train$exteriorfinishConcrete)
+sd(full_train$exteriorfinishFrame)
+sd(full_train$exteriorfinishLog)
+sd(full_train$exteriorfinishStone)
+sd(full_train$exteriorfinishStucco)
+sd(full_train$rooftypeROLL)
+sd(full_train$rooftypeSHINGLE)
+sd(full_train$rooftypeSLATE)
+sd(full_train$LocationNotCity)
+sd(full_train$LocationPartCity)
+```
+## Frequency of categorical predictors
+```{r}
+table(full_train$`descMULTI-FAMILY`)
+table(full_train$`descROWHOUSE`)
+table(full_train$`descSINGLE FAMILY`)
+table(full_train$exteriorfinishConcrete)
+table(full_train$exteriorfinishFrame)
+table(full_train$exteriorfinishLog)
+table(full_train$exteriorfinishStone)
+table(full_train$exteriorfinishStucco)
+table(full_train$rooftypeROLL)
+table(full_train$rooftypeSHINGLE)
+table(full_train$rooftypeSLATE)
+table(full_train$LocationNotCity)
+table(full_train$LocationPartCity)
+```
+
+```{r}
+## remove exteriorfinishConcrete (only 4 observations in whole data set)
+## remove exteriorfinishLog (only 1 observation in whole data set)
+full_train <- full_train[,-c(8,10)]
+```
+
+
+## Correlation matrix
+```{r}
+## correlation matrix, without the id column
+cor(full_train[, -1])
+```
+
+## Plots
+
+```{r}
+## plots or box plots for each predictor against price in the train set
+boxplot(full_train$price ~ full_train$`descMULTI-FAMILY`)
+boxplot(full_train$price ~ full_train$`descROWHOUSE`)
+boxplot(full_train$price ~ full_train$`descSINGLE FAMILY`)
+
+boxplot(full_train$price ~ full_train$numstories)
+plot(full_train$price, full_train$yearbuilt)
+
+boxplot(full_train$price ~ full_train$exteriorfinishFrame)
+boxplot(full_train$price ~ full_train$exteriorfinishStone)
+boxplot(full_train$price ~ full_train$exteriorfinishStucco)
+
+boxplot(full_train$price ~ full_train$rooftypeROLL)
+boxplot(full_train$price ~ full_train$rooftypeSHINGLE)
+boxplot(full_train$price ~ full_train$rooftypeSLATE)
+
+boxplot(full_train$price ~ full_train$basement)
+plot(full_train$price ~ full_train$totalrooms)
+boxplot(full_train$price ~ full_train$bedrooms)
+plot(full_train$price ~ full_train$bathrooms)
+boxplot(full_train$price ~ full_train$fireplaces)
+plot(full_train$price, full_train$sqft)
+plot(full_train$lotarea, full_train$price)
+boxplot(full_train$price ~ full_train$zipcode)
+plot(full_train$AvgIncome, full_train$price)
+plot(full_train$DistDowntown, full_train$price)
+
+boxplot(full_train$price ~ full_train$LocationNotCity)
+boxplot(full_train$price ~ full_train$LocationPartCity)
+```
+
+
+```{r}
+## pairwise plots (split into 3 groups)
+pairs(~price + full_train$`descMULTI-FAMILY` + full_train$descROWHOUSE + full_train$`descSINGLE FAMILY`, data = full_train)
+pairs(~price + full_train$exteriorfinishFrame + full_train$exteriorfinishStone + full_train$exteriorfinishStucco, data = full_train)
+pairs(~price + full_train$rooftypeROLL + full_train$rooftypeSHINGLE + full_train$rooftypeSLATE, data = full_train)
+pairs(~price + full_train$LocationNotCity + full_train$LocationPartCity, data = full_train)
+pairs(~price + bathrooms + fireplaces + sqft + lotarea , data = full_train)
+pairs(~price + zipcode + AvgIncome + DistDowntown + basement, data = full_train)
+pairs(~price + numstories + yearbuilt + totalrooms + bedrooms, data = full_train)
+```
+
+# Conclusions and thoughts from EDA
+
+Looking at scatterplots: exteriorfinishStone, exteriorfinishStucco, rooftypeSLATE, totalrooms, bedrooms, bathrooms, fireplace, and sqft
+
+Looking at correlation matrix:
+- numstories (.23) - yearbuilt (.23) -
+exteriorfinishStone (.29) - exteriorfinishStucco (.23) - rooftypeSHINGLE
+(-.33) - rooftypeSLATE (.34) - totalrooms (.63) - bedrooms (.53) -
+bathrooms (.76) - fireplaces (.51) - sqft (.83) - AvgIncome (.28) -
+lotarea (.18)
+
+Colinear variables:
+
+bedrooms and totalrooms (.84) --\> total rooms more correlated with price 
+bathrooms and totalrooms (.79) --\> bathrooms way more correlated with price 
+sqft and totalrooms (.74) --\> sqft way more correlated with price 
+bathrooms and bedrooms (.70) --\> bathrooms more correlated with
+price
+
+bathrooms and sqft (.83) --\> sqft more correlated with price
+
+LocationNotCity and AvgIncome (.72) --\> Avg income more correlated with
+price
+
+totalrooms is strongly correlated with 3 of the predictors so could
+remove this. Bathrooms needs to stay even though it is highly correlated with sqft because we are removing totalrooms (which was highly correlated with sqft). We can also remove Location since it's strongly correlated with AvgIncome and DistDowntown.
+
+
+# Models
+
+## Regression Based Models
+
+```{r}
+## Let's do 10-fold CV to determine the average test error for each of the models
+
+set.seed(1)
+## shuffling the observation numbers randomly
+CVind <- sample(1:length(full_train$price))
+train.shuf <- full_train[CVind,]
+
+## creating the 10 folds (70 observations in each group)
+ind1 <- c(1, 71, 141, 211, 281, 351, 421, 491, 561, 631)
+ind2 <- c(70, 140, 210, 280, 350, 420, 490, 560, 630, 700)
+```
+
+### Linear regression - forward selection
+
+```{r}
+set.seed(1)
+mse.sq <- rep(0,10)
+best_models_fwd <- rep(0,10)
+for (i in 1:10) {
+	# First we need to create the train and test data for this iteration:
+	# Here we'll pull out the data from the training set
+	temp.train <- train.shuf[-(ind1[i]:ind2[i]),]
+	
+	# And here we'll make the test set:
+	temp.test.x <- train.shuf[ind1[i]:ind2[i], c(3:25)]
+	temp.test.y <- train.shuf[ind1[i]:ind2[i],2]
+	
+	# Now we'll build the linear models:
+	min_model <- lm(price ~ 1, data = temp.train) 
+  max_model <- formula(lm(price ~ . - id, data = temp.train))
+
+  best_model <- step(min_model, direction = "forward", scope = max_model)
+	best_models_fwd[i] <- best_model
+	
+	# And calculate the MSE on our hold-out (test) set from each:
+	mse.sq[i] <- mean((predict(best_model,temp.test.x) - temp.test.y)^2)
+}
+
+# Now the MSE from each CV run is stored in our vectors; let's take the average
+mean(mse.sq)
+```
+
+
+### Linear regression - backward selection
+
+```{r}
+set.seed(1)
+mse.sq <- rep(0,10)
+best_models_bwd <- rep(0,10)
+for (i in 1:10) {
+	# First we need to create the train and test data for this iteration:
+	# Here we'll pull out the data from the training set
+	temp.train <- train.shuf[-(ind1[i]:ind2[i]),]
+	
+	# And here we'll make the test set:
+	temp.test.x <- train.shuf[ind1[i]:ind2[i], c(3:25)]
+	temp.test.y <- train.shuf[ind1[i]:ind2[i],2]
+	
+	# Now we'll build the linear models:
+  max_model <- lm(price ~ . - id, data = temp.train)
+  best_model = step(max_model, direction = "backward")
+
+	best_models_bwd[i] <- best_model
+	
+	# And calculate the MSE on our hold-out (test) set from each:
+	mse.sq[i] <- mean((predict(best_model,temp.test.x) - temp.test.y)^2)
+}
+
+# Now the MSE from each CV run is stored in our vectors; let's take the average
+mean(mse.sq)
+```
+
+
+### Linear regression - stepwise selection
+
+```{r}
+set.seed(1)
+mse.sq <- rep(0,10)
+best_models_stp <- rep(0,10)
+for (i in 1:10) {
+	# First we need to create the train and test data for this iteration:
+	# Here we'll pull out the data from the training set
+	temp.train <- train.shuf[-(ind1[i]:ind2[i]),]
+	
+	# And here we'll make the test set:
+	temp.test.x <- train.shuf[ind1[i]:ind2[i], c(3:25)]
+	temp.test.y <- train.shuf[ind1[i]:ind2[i],2]
+	
+	# Now we'll build the linear models:
+	min_model <- lm(price ~ 1, data = temp.train) 
+  max_model <- formula(lm(price ~ . - id, data = temp.train))
+
+  best_model <- step(min_model, direction = "both", scope = max_model)
+
+	best_models_stp[i] <- best_model
+	
+	# And calculate the MSE on our hold-out (test) set from each:
+	mse.sq[i] <- mean((predict(best_model,temp.test.x) - temp.test.y)^2)
+}
+
+# Now the MSE from each CV run is stored in our vectors; let's take the average
+mean(mse.sq)
+```
+
+
+##### Converting df to matrix to use in lasso, ridge
+
+```{r}
+set.seed(1)
+
+x <- model.matrix(price ~ . - id - 1, data = full_train)
+y <- full_train$price
+
+set.seed(1)
+## shuffling the observation numbers randomly
+CVind <- sample(1:length(full_train$price))
+#train.shuf <- full_train[CVind,]
+
+## creating the 10 folds (70 observations in each group)
+ind1 <- c(1, 71, 141, 211, 281, 351, 421, 491, 561, 631)
+ind2 <- c(70, 140, 210, 280, 350, 420, 490, 560, 630, 700)
+
+```
+
+### Ridge Regression
+
+```{r}
+set.seed(1)
+
+mse.sq <- rep(0,10)
+for (i in 1:10) {
+	# First we need to create the train and test data for this iteration:
+	# Here we'll pull out the data from the training set
+	temp.train <- CVind[-(ind1[i]:ind2[i])]
+	
+	# And here we'll make the test set:
+	temp.test.x <- CVind[ind1[i]:ind2[i]]
+	temp.test.y <- y[temp.test.x]
+	
+	# Now we'll build the ridge regression models:
+  ridge.mod <- glmnet(x[temp.train, ], y[temp.train], alpha = 0)
+  bestlam <- ridge.mod$lambda.min
+  ridge.pred <- predict(ridge.mod, s = bestlam, newx = x[temp.test.x, ])
+  mse.sq[i] <- mean((ridge.pred - temp.test.y)^2)
+}
+
+# Now the MSE from each CV run is stored in our vectors; let's take the average
+mean(mse.sq)
+
+```
+
+### Lasso
+
+```{r}
+set.seed(1)
+
+mse.sq <- rep(0,10)
+impt_var <- rep(0,10)
+for (i in 1:10) {
+	# First we need to create the train and test data for this iteration:
+	# Here we'll pull out the data from the training set
+	temp.train <- CVind[-(ind1[i]:ind2[i])]
+	
+	# And here we'll make the test set:
+	temp.test.x <- CVind[ind1[i]:ind2[i]]
+	temp.test.y <- y[temp.test.x]
+	
+	# Now we'll build the lasso models:
+  lasso.mod<-glmnet(x[temp.train, ], y[temp.train], alpha = 1)
+  cv.out<-cv.glmnet(x[temp.train, ], y[temp.train], alpha = 1)
+  bestlam<-cv.out$lambda.min
+  lasso.pred<-predict(lasso.mod, s = bestlam, newx = x[temp.test.x, ])
+  mse.sq[i] <- mean((lasso.pred - temp.test.y)^2)
+}
+
+# Now the MSE from each CV run is stored in our vectors; let's take the average
+mean(mse.sq)
+```
+
+
+### PCR
+
+```{r}
+# set.seed(1)
+# 
+# mse.sq <- rep(0,10)
+# for (i in 1:10) {
+# 	# First we need to create the train and test data for this iteration:
+# 	# Here we'll pull out the data from the training set
+# 	temp.train <- CVind[-(ind1[i]:ind2[i])]
+# 	
+# 	# And here we'll make the test set:
+# 	temp.test.x <- CVind[ind1[i]:ind2[i]]
+# 	temp.test.y <- y[temp.test.x]
+# 	
+# 	# Now we'll build the pcr models:
+#   pcr.fit<-pcr(price ~ . -id, data = full_train, subset = temp.train, scale = TRUE, validation = "CV")
+#   pcr.pred<-predict(pcr.fit, x[temp.test.x, ], ncomp = pcr.fit$ncomp)
+#   mse.sq[i] <- mean((pcr.pred - temp.test.y)^2)
+# }
+# 
+# # Now the MSE from each CV run is stored in our vectors; let's take the average
+# mean(mse.sq)
+```
+Error in La.svd(X) : infinite or missing values in 'x'
+
+### PLS
+
+```{r}
+# set.seed(1)
+# 
+# mse.sq <- rep(0,10)
+# for (i in 1:10) {
+# 	# First we need to create the train and test data for this iteration:
+# 	# Here we'll pull out the data from the training set
+# 	temp.train <- CVind[-(ind1[i]:ind2[i])]
+# 	
+# 	# And here we'll make the test set:
+# 	temp.test.x <- CVind[ind1[i]:ind2[i]]
+# 	temp.test.y <- y[temp.test.x]
+# 	
+# 	# Now we'll build the pls models:
+#   pls.fit<-plsr(price ~ . - id, data = full_train, subset = temp.train,
+#               scale = TRUE, validation = "CV")
+#   pls.pred<-predict(pls.fit, x[temp.test.x, ], ncomp = pls.fit$ncomp)
+#   mse.sq[i] <- mean((pls.pred - temp.test.y)^2)
+# }
+# 
+# # Now the MSE from each CV run is stored in our vectors; let's take the average
+# mean(mse.sq)
+```
+
+Warning: Scaling with (near) zero standard deviation
+
+### GAM
+
+```{r}
+## Let's do 10-fold CV to determine the average test error for each of the models
+
+set.seed(1)
+## shuffling the observation numbers randomly
+CVind <- sample(1:length(full_train_b$price))
+train.shuf <- full_train_b[CVind,]
+
+## creating the 10 folds (70 observations in each group)
+ind1 <- c(1, 71, 141, 211, 281, 351, 421, 491, 561, 631)
+ind2 <- c(70, 140, 210, 280, 350, 420, 490, 560, 630, 700)
+```
+
+```{r}
+gam.m3<-gam(price ~  s(numstories) + 
+              s(yearbuilt) + s(totalrooms) + s(bedrooms) + 
+              s(bathrooms) + s(fireplaces) + s(sqft) + s(lotarea) +
+              s(zipcode) + s(AvgIncome)  +
+              s(DistDowntown), data = full_train_b) 
+
+par(mfrow = c(2, 3))
+plot(gam.m3, se = TRUE, col = " blue")
+```
+
+Error here initially before doing model.matrix: A smoothing variable
+encountered with 3 or less unique values; at least 4 needed - deleted
+the categorical ones
+
+use nonzero coefficient variables to build GAMs
+
+```{r}
+set.seed(1)
+
+## gam predictions
+mse.sq <- rep(0,10)
+mse.sq.1 <- rep(0,10)
+mse.sq.2 <- rep(0,10)
+
+for (i in 1:10) {
+	# First we need to create the train and test data for this iteration:
+	# Here we'll pull out the data from the training set
+	temp.train <- train.shuf[-(ind1[i]:ind2[i]),]
+	
+	# And here we'll make the test set:
+	temp.test.x <- train.shuf[ind1[i]:ind2[i], c(3:18)]
+	
+	temp.test.x$exteriorfinish <- factor(temp.test.x$exteriorfinish, levels = levels(temp.train$exteriorfinish))
+	
+	temp.test.y <- train.shuf[ind1[i]:ind2[i], 2]
+  
+  gam.m3<-gam(price ~  s(numstories) + 
+              s(yearbuilt) + s(totalrooms) + s(bedrooms) + 
+              s(bathrooms) + s(fireplaces) + s(sqft) + s(lotarea) +
+              s(zipcode) + s(AvgIncome)  +
+              s(DistDowntown) + Location + rooftype + desc , data =                 temp.train, type = "response")
+  
+  gam.m3.1 <-gam(price ~  s(numstories) + 
+              s(yearbuilt) + s(totalrooms) + s(bedrooms) + 
+              s(bathrooms) + s(fireplaces) + s(sqft) + s(lotarea) +
+              s(zipcode) + s(AvgIncome)  +
+              s(DistDowntown) + desc , data = temp.train, type =                    "response")
+  
+  gam.m3.2 <- gam(price ~  s(yearbuilt) + s(totalrooms) + 
+              s(bathrooms) + s(sqft)  + s(AvgIncome)  , data = temp.train, type = "response")
+	
+	# And calculate the MSE on our hold-out (test) set from each:
+	mse.sq[i] <- mean((predict(gam.m3, temp.test.x) - temp.test.y)^2)
+	mse.sq.1[i] <- mean((predict(gam.m3.1, temp.test.x) - temp.test.y)^2)
+	mse.sq.2[i] <- mean((predict(gam.m3.2, temp.test.x) - temp.test.y)^2)
+}
+
+# Now the MSE from each CV run is stored in our vectors; let's take the average
+mean(mse.sq)
+mean(mse.sq.1)
+mean(mse.sq.2)
+
+```
+removed categorical pred: having issue where model doesnt know how to predict a category factor if it wasn't in the train set
+
+## Tree-based model
+
+```{r}
+## Let's do 10-fold CV to determine the average test error for each of the models
+
+set.seed(1)
+## shuffling the observation numbers randomly
+CVind <- sample(1:length(full_train_t$price))
+train.shuf <- full_train_t[CVind,]
+
+## creating the 10 folds (70 observations in each group)
+ind1 <- c(1, 71, 141, 211, 281, 351, 421, 491, 561, 631)
+ind2 <- c(70, 140, 210, 280, 350, 420, 490, 560, 630, 700)
+```
+
+```{r}
+tree.train <- tree(price ~ . - id, data = full_train_t)
+summary(tree.train)
+plot(tree.train)
+text(tree.train, cex = .7)
+# "sqft"  "AvgIncome" "lotarea"   "bathrooms" used in tree construction
+
+tree.train.1 <- tree(price ~ sqft + AvgIncome + lotarea + bathrooms, data = full_train_t)
+summary(tree.train.1)
+```
+
+### Regression Tree without and with pruning
+
+```{r warning = FALSE}
+## regression tree - unpruned
+mse.sq <- rep(0,10)
+mse.sq.1 <- rep(0,10)
+mse.sq.prune <- rep(0,10)
+mse.sq.1.prune <- rep(0,10)
+
+for (i in 1:10) {
+	# First we need to create the train and test data for this iteration:
+	# Here we'll pull out the data from the training set
+	temp.train <- train.shuf[-(ind1[i]:ind2[i]),]
+	
+	# And here we'll make the test set:
+	temp.test.x <- train.shuf[ind1[i]:ind2[i], c(3:18)]
+	temp.test.y <- train.shuf[ind1[i]:ind2[i], 2]
+	
+	# Now we'll build the regression tree models:
+	## full model
+	tree.train <- tree(price ~ desc + numstories + yearbuilt + exteriorfinish + 
+	                     rooftype + basement + totalrooms + bedrooms + bathrooms + fireplaces + sqft + lotarea + zipcode + AvgIncome +
+	                     Location + DistDowntown, data = temp.train)
+	## predictors used to build the tree given by summary information
+	tree.train.1 <- tree(price ~ sqft + AvgIncome + lotarea + 
+	                       bathrooms, data = temp.train)
+	
+	# And calculate the MSE on our hold-out (test) set from each:
+	mse.sq[i] <- mean((predict(tree.train, temp.test.x) - temp.test.y)^2)
+	mse.sq.1[i] <- mean((predict(tree.train.1, temp.test.x) - temp.test.y)^2)
+	
+	
+	## ## Use cross-validation in order to determine the optimal level of tree complexity.
+	cv.train <- cv.tree(tree.train)
+	cv.train.1 <- cv.tree(tree.train.1)
+	
+	## check if pruning the tree improves the test MSE
+	prune.train <- prune.tree(tree.train, best = cv.train$size[which.min(cv.train$dev)])
+	prune.train.1 <- prune.tree(tree.train.1, best = cv.train.1$size[which.min(cv.train.1$dev)])
+	# And calculate the MSE on our hold-out (test) set from each:
+	mse.sq.prune[i] <- mean((predict(prune.train, temp.test.x) - temp.test.y)^2)
+	mse.sq.1.prune[i] <- mean((predict(prune.train.1, temp.test.x) - temp.test.y)^2)
+	
+}
+
+# Now the MSE from each CV run is stored in our vectors; let's take the average
+mean(mse.sq)
+mean(mse.sq.1)
+mean(mse.sq.prune)
+mean(mse.sq.1.prune)
+
+```
+## Tree Ensembles
+### Bagging
+
+```{r}
+## bagging
+
+set.seed(1)
+## bagging approach
+bag.train <- randomForest(price ~ . - id, data = full_train_t, 
+                           mtry = 16, importance = TRUE)
+
+importance(bag.train)
+```
+
+Initial consideration: sqft, AvgIncome, lotarea, bathrooms (from reg
+tree), but also consider yearbuilt + numstories in another model
+
+```{r}
+set.seed(1)
+## bagging approach 
+mse.sq <- rep(0,10)
+mse.sq.1 <- rep(0,10)
+mse.sq.2 <- rep(0,10)
+
+for (i in 1:10) {
+	# First we need to create the train and test data for this iteration:
+	# Here we'll pull out the data from the training set
+	temp.train <- train.shuf[-(ind1[i]:ind2[i]),]
+	
+	# And here we'll make the test set:
+	temp.test.x <- train.shuf[ind1[i]:ind2[i], c(3:18)]
+	temp.test.y <- train.shuf[ind1[i]:ind2[i], 2]
+	
+	# Now we'll build the bagging models: mtry = p
+	bag.train <- randomForest(price ~ sqft + AvgIncome + lotarea + 
+	                            bathrooms + yearbuilt + 
+	                            numstories, data = temp.train,
+                              mtry = 6, importance = TRUE)
+	
+	bag.train.1 <- randomForest(price ~ sqft + AvgIncome + lotarea + 
+	                       bathrooms + yearbuilt, data = temp.train, 
+	                       mtry = 5, importance = TRUE)
+	
+	bag.train.2 <- randomForest(price ~ sqft + AvgIncome + lotarea + 
+	                       bathrooms, data = temp.train, 
+	                       mtry = 4, importance = TRUE)
+	
+	# And calculate the MSE on our hold-out (test) set from each:
+	mse.sq[i] <- mean((predict(bag.train, temp.test.x) - temp.test.y)^2)
+	mse.sq.1[i] <- mean((predict(bag.train.1, temp.test.x) - temp.test.y)^2)
+	mse.sq.2[i] <- mean((predict(bag.train.2, temp.test.x) - temp.test.y)^2)
+	
+}
+
+# Now the MSE from each CV run is stored in our vectors; let's take the average
+mean(mse.sq)
+mean(mse.sq.1)
+mean(mse.sq.2)
+```
+
+### Random forests
+
+```{r}
+## random forests - best predictive performance??
+
+set.seed(1)
+##  By default, randomForest() uses p/3 variables when building a random forest 
+## of regression trees
+
+rf.train <- randomForest(price ~ . - id, data = full_train_t, 
+                           mtry = 16/3, importance = TRUE)
+importance(rf.train)
+```
+
+Initial consideration: bathrooms, sqft, lotarea, AvgIncome --\> try
+considering totalrooms, bedrooms, yearbuilt?
+
+```{r}
+set.seed(1)
+## random forest approach 
+mse.sq <- rep(0,10)
+mse.sq.1 <- rep(0,10)
+mse.sq.2 <- rep(0,10)
+mse.sq.3 <- rep(0,10)
+mse.sq.4 <- rep(0,10)
+mse.sq.5 <- rep(0,10)
+mse.sq.6 <- rep(0,10)
+
+for (i in 1:10) {
+	# First we need to create the train and test data for this iteration:
+	# Here we'll pull out the data from the training set
+	temp.train <- train.shuf[-(ind1[i]:ind2[i]),]
+	
+	# And here we'll make the test set:
+	temp.test.x <- train.shuf[ind1[i]:ind2[i], c(3:18)]
+	temp.test.y <- train.shuf[ind1[i]:ind2[i], 2]
+	
+	# Now we'll build the rf models: mtry = p/3 for regression
+	## built multiple bc 4 var looked good initially, so added one variable at a time
+	rf.train <- randomForest(price ~ sqft + AvgIncome + lotarea + 
+	                            bathrooms + yearbuilt + 
+	                            totalrooms + bedrooms, data = temp.train,
+                              mtry = 7/3, importance = TRUE)
+	rf.train.1 <- randomForest(price ~ sqft + AvgIncome + lotarea + 
+	                            bathrooms + yearbuilt + 
+	                            totalrooms, data = temp.train,
+                              mtry = 6/3, importance = TRUE)
+	rf.train.2 <- randomForest(price ~ sqft + AvgIncome + lotarea + 
+	                            bathrooms + yearbuilt, data = temp.train,
+                              mtry = 5/3, importance = TRUE)
+	rf.train.3 <- randomForest(price ~ sqft + AvgIncome + lotarea + 
+	                       bathrooms, data = temp.train, 
+	                       mtry = 4/3, importance = TRUE)
+	
+	## 4 variables look the lowest at this point, try adding totalrooms or bedrooms
+	## to see if it makes it lower (is within the next best 3 - yearbuilt already tried)
+	
+	rf.train.4 <- randomForest(price ~ sqft + AvgIncome + lotarea + 
+	                            bathrooms + totalrooms, data = temp.train,
+                              mtry = 5/3, importance = TRUE)
+	rf.train.5 <- randomForest(price ~ sqft + AvgIncome + lotarea + 
+	                            bathrooms + bedrooms, data = temp.train,
+                              mtry = 5/3, importance = TRUE)
+	rf.train.6 <- randomForest(price ~ . - id, data = temp.train, 
+                           mtry = 16/3, importance = TRUE)
+	
+	# And calculate the MSE on our hold-out (test) set from each:
+	mse.sq[i] <- mean((predict(rf.train, temp.test.x) - temp.test.y)^2)
+	mse.sq.1[i] <- mean((predict(rf.train.1, temp.test.x) - temp.test.y)^2)
+	mse.sq.2[i] <- mean((predict(rf.train.2, temp.test.x) - temp.test.y)^2)
+	mse.sq.3[i] <- mean((predict(rf.train.3, temp.test.x) - temp.test.y)^2)
+	mse.sq.4[i] <- mean((predict(rf.train.4, temp.test.x) - temp.test.y)^2)
+	mse.sq.5[i] <- mean((predict(rf.train.5, temp.test.x) - temp.test.y)^2)
+	mse.sq.6[i] <- mean((predict(rf.train.6, temp.test.x) - temp.test.y)^2)
+}
+
+# Now the MSE from each CV run is stored in our vectors; let's take the average
+mean(mse.sq)
+mean(mse.sq.1)
+mean(mse.sq.2)
+mean(mse.sq.3)
+mean(mse.sq.4)
+mean(mse.sq.5)
+mean(mse.sq.6)
+```
+
+so far rf.train.3 looks *best* with sqft, AvgIncome, lotarea, bathrooms,
+
+### Boosting
+
+```{r}
+set.seed(1)
+## shuffling the observation numbers randomly
+CVind <- sample(1:length(full_train_b$price))
+train.shuf <- full_train_b[CVind,]
+
+## creating the 10 folds (70 observations in each group)
+ind1 <- c(1, 71, 141, 211, 281, 351, 421, 491, 561, 631)
+ind2 <- c(70, 140, 210, 280, 350, 420, 490, 560, 630, 700)
+```
+
+##### tune the shrinkage parameter
+
+```{r}
+## boosting - best predictive performance
+set.seed(1)
+
+## first tune for shrinkage
+shrinkage_val <- seq(from = .001, to = .01, by = .001)
+training_mse <- rep(0, length(shrinkage_val))
+training_mse.1 <- rep(0, length(shrinkage_val))
+i = 1
+
+for (k in 1:length(shrinkage_val)) {
+  # First we need to create the train and test data for this iteration:
+	# Here we'll pull out the data from the training set
+	temp.train <- train.shuf[-(ind1[i]:ind2[i]),]
+	
+	# And here we'll make the test set:
+	temp.test.x <- train.shuf[ind1[i]:ind2[i], c(3:18)]
+	temp.test.y <- train.shuf[ind1[i]:ind2[i], 2]
+  
+  boost.hitters <- gbm(price ~ numstories + yearbuilt + basement + 
+                       totalrooms + bedrooms + bathrooms + fireplaces +
+                       sqft + lotarea + zipcode + AvgIncome +                                   DistDowntown +
+                       desc + exteriorfinish + rooftype + 
+                       Location, data = temp.train, 
+                       distribution = "gaussian", 
+                       shrinkage = shrinkage_val[k]
+                       )
+  
+  boost.hitters1 <- gbm(price ~  bathrooms +
+                       sqft + lotarea + AvgIncome, 
+                       data = temp.train, 
+                       distribution = "gaussian", 
+                       shrinkage = shrinkage_val[k]
+                       )
+  
+  training_mse[k] <- mean((predict(boost.hitters, temp.test.x) - temp.test.y)^2)
+  training_mse.1[k] <- mean((predict(boost.hitters1, temp.test.x) - temp.test.y)^2)
+  
+  i = i + 1
+}
+
+plot(shrinkage_val, training_mse)
+plot(shrinkage_val, training_mse.1)
+
+
+################# check diff range from .01 to .1
+shrinkage_val.1 <- seq(from = .01, to = .1, by = .01)
+training_mse.2 <- rep(0, length(shrinkage_val))
+training_mse.3 <- rep(0, length(shrinkage_val))
+i = 1
+
+for (k in 1:length(shrinkage_val)) {
+  # First we need to create the train and test data for this iteration:
+	# Here we'll pull out the data from the training set
+	temp.train <- train.shuf[-(ind1[i]:ind2[i]),]
+	
+	# And here we'll make the test set:
+	temp.test.x <- train.shuf[ind1[i]:ind2[i], c(3:18)]
+	temp.test.y <- train.shuf[ind1[i]:ind2[i], 2]
+  
+  boost.hitters <- gbm(price ~ numstories + yearbuilt + basement + 
+                       totalrooms + bedrooms + bathrooms + fireplaces +
+                       sqft + lotarea + zipcode + AvgIncome + DistDowntown +
+                       desc + exteriorfinish + rooftype + 
+                       Location, data = temp.train, 
+                       distribution = "gaussian", 
+                       shrinkage = shrinkage_val.1[k]
+                       )
+  
+  boost.hitters1 <- gbm(price ~  bathrooms +
+                       sqft + lotarea + AvgIncome, 
+                       data = temp.train, 
+                       distribution = "gaussian", 
+                       shrinkage = shrinkage_val.1[k]
+                       )
+  
+  training_mse.2[k] <- mean((predict(boost.hitters, temp.test.x) - temp.test.y)^2)
+  training_mse.3[k] <- mean((predict(boost.hitters1, temp.test.x) - temp.test.y)^2)
+  i = i + 1
+}
+
+plot(shrinkage_val.1, training_mse.2)
+plot(shrinkage_val.1, training_mse.3)
+```
+
+.09 seems to be the best shrinkage value
+
+##### tune for ntree, given best shrinkage value
+
+```{r}
+## next tune for ntree
+
+## boosting - best predictive performance
+set.seed(1)
+
+n.tree_val <- seq(from = 100, to = 1000, by = 100)
+training_mse <- rep(0, length(n.tree_val))
+training_mse.1 <- rep(0, length(n.tree_val))
+i = 1
+
+for (k in 1:length(n.tree_val)) {
+  # First we need to create the train and test data for this iteration:
+	# Here we'll pull out the data from the training set
+	temp.train <- train.shuf[-(ind1[i]:ind2[i]),]
+	
+	# And here we'll make the test set:
+	temp.test.x <- train.shuf[ind1[i]:ind2[i], c(3:18)]
+	temp.test.y <- train.shuf[ind1[i]:ind2[i], 2]
+  
+  boost.hitters <- gbm(price ~ numstories + yearbuilt + basement + 
+                       totalrooms + bedrooms + bathrooms + fireplaces +
+                       sqft + lotarea + zipcode + AvgIncome + DistDowntown +
+                       desc + exteriorfinish + rooftype + 
+                       Location, data = temp.train, 
+                       distribution = "gaussian", 
+                       shrinkage = .09, 
+                       n.tree = n.tree_val[k]
+                       )
+  
+  boost.hitters1 <- gbm(price ~  bathrooms +
+                       sqft + lotarea + AvgIncome, 
+                       data = temp.train, 
+                       distribution = "gaussian", 
+                       shrinkage = .09,
+                       n.tree = n.tree_val[k]
+                       )
+  
+  training_mse[k] <- mean((predict(boost.hitters, temp.test.x, 
+                                   n.tree = n.tree_val[k]) - temp.test.y)^2)
+  
+  training_mse.1[k] <- mean((predict(boost.hitters1, temp.test.x, 
+                                     n.tree = n.tree_val[k]) - temp.test.y)^2)
+
+  i = i + 1
+}
+
+plot(n.tree_val, training_mse)
+plot(n.tree_val, training_mse.1)
+
+```
+
+```{r}
+boost.hitters <- gbm(price ~ . -id, data = full_train_b, 
+                       distribution = "gaussian", 
+                       n.trees = 400, 
+                       shrinkage = .09)
+summary(boost.hitters)
+```
+
+Consider a couple models:
+
+1. sqft + bathrooms + lotarea + totalrooms + fireplaces + rooftype + exteriorfinish
+
+2. sqft + bathrooms + lotarea + totalrooms + fireplaces + rooftype
+
+3. sqft + bathrooms + lotarea + totalrooms + fireplaces
+
+4. sqft + bathrooms + lotarea + totalrooms
+
+5. sqft + bathrooms + lotarea
+
+```{r}
+set.seed(1)
+
+## boosting approach - use 400 or 900 trees?
+mse.sq <- rep(0,10)
+mse.sq.1 <- rep(0,10)
+mse.sq.2 <- rep(0,10)
+mse.sq.3 <- rep(0,10)
+mse.sq.4 <- rep(0,10)
+
+for (i in 1:10) {
+    # First we need to create the train and test data for this iteration:
+    # Here we'll pull out the data from the training set
+    temp.train <- train.shuf[-(ind1[i]:ind2[i]),]
+    
+    # And here we'll make the test set:
+    temp.test.x <- train.shuf[ind1[i]:ind2[i], c(3:18)]
+    temp.test.y <- train.shuf[ind1[i]:ind2[i], 2]
+  
+  boost.hitters <- gbm(price ~ sqft + bathrooms + lotarea + 
+                         totalrooms + fireplaces + rooftype + exteriorfinish,                         data = temp.train, 
+                       distribution = "gaussian", 
+                       n.trees = 400, 
+                       shrinkage = .09)
+
+  boost.hitters1 <- gbm(price ~ sqft + bathrooms + lotarea + 
+                          totalrooms + fireplaces + rooftype, 
+                        data = temp.train, 
+                       distribution = "gaussian", 
+                       n.trees = 400, 
+                       shrinkage = .09)
+  
+  boost.hitters2 <- gbm(price ~ sqft + bathrooms + lotarea + 
+                        totalrooms + fireplaces, 
+                        data = temp.train, 
+                       distribution = "gaussian", 
+                       n.trees = 400, 
+                       shrinkage = .09)
+  
+  boost.hitters3 <- gbm(price ~ sqft + bathrooms + lotarea + totalrooms,
+                       data = temp.train, 
+                       distribution = "gaussian", 
+                       n.trees = 400, 
+                       shrinkage = .09)
+  
+   boost.hitters4 <- gbm(price ~ sqft + bathrooms + lotarea,
+                       data = temp.train, 
+                       distribution = "gaussian", 
+                       n.trees = 400, 
+                       shrinkage = .09)
+    
+    # And calculate the MSE on our hold-out (test) set from each:
+    mse.sq[i] <- mean((predict(boost.hitters, temp.test.x, n.trees = 400) - temp.test.y)^2)
+    
+    mse.sq.1[i] <- mean((predict(boost.hitters1, temp.test.x, n.trees = 400) - temp.test.y)^2)
+    
+    mse.sq.2[i] <- mean((predict(boost.hitters2, temp.test.x, n.trees = 400) - temp.test.y)^2)
+    
+    mse.sq.3[i] <- mean((predict(boost.hitters3, temp.test.x, n.trees = 400) - temp.test.y)^2)
+    
+    mse.sq.4[i] <- mean((predict(boost.hitters4, temp.test.x, n.trees = 400) - temp.test.y)^2)
+}
+
+# Now the MSE from each CV run is stored in our vectors; let's take the average
+mean(mse.sq)
+mean(mse.sq.1)
+mean(mse.sq.2)
+mean(mse.sq.3)
+mean(mse.sq.4)
+```
+
+
+## Predicting Prices to a CSV output
+
+```{r}
+## using best rf model with 4 of the predictors
+pred_prices <- predict(rf.train.3, newdata = full_test)
+
+# df with id and predicted prices
+csv.pred.df <- data.frame(id = full_test$id, price = pred_prices)
+
+# create csv file
+write.csv(csv.pred.df, file = "testing_predictions_Ramkumar_Archana_ARR135.csv")
+```
+
+------------------------------------------------------------------------
+
+Notes & Questions:
+
+2\. interaction terms? 
+
+3\. transform some of the variables? --\> 
+4. k- fold or validation --\> k-fold better generalizability
+bc validation set only does the split once and extreme observations have
+the possibility of falling in or not in the train/validation set
+
+4\. turn categories into numerical variables? dummy variables?
+
+5\. should I literally test every model? In what order should I do this?
+
+7. correlation between encoded categorical variables and response
+assumes linear relationship
+
+9\. how to deal with extreme values, impute median or mean?
+
+*Different model exploration options*:
+
+*Regression methods*:
+
+\- linear regression
+
+\- forward selection (40378466678)
+
+\- backward selection (40941931589)
+
+\- stepwise selection (40388861899)
+
+\- non linear transformation? 
+
+\- lasso (39869358852)
+
+\- ridge (86117479468)
+
+\- pcr - issues
+
+\- pls - issues
+
+\- polynomial regression
+
+\- regression splines
+
+\- gams - 90091895308
+
+-   some lotarea have value of 0 - discuss this
+-   numerical instead of categorial 1-5 which made models work --\> but
+    treating as continuous and not as factor
+-   as.factor()
+-   rf interpretation - dont know how model is treating the variabels as
+    much, but can look at coeffiicients in linear regression
+
+*Tree Based Models*: (rf and boosting best predictive performance) -
+regression trees/pruning - best was 4 var subset (52023484630)
+
+\- bagging - best was 4 var subset (41910773783)
+
+\- rf - best was 4 var subset (35932322124) sqft + AvgIncome + lotarea +
+bathrooms
+
+\- boosting - best was (38009749112) sqft + bathrooms + lotarea +
+yearbuilt + rooftype
+
+\- BART 
+
+*Classification methods*: (not doing these) - logistic reg - kNN - naive
+bayes - LDA - QDA
+
+Best one so far: rf (35932322124 test mse) 
+standard deviation of price is 362895.8 variance is (362895.8)\^2 = 131693361658
