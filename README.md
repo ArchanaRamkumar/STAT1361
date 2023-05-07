@@ -1,4 +1,4 @@
-# STAT1361 Spring 2023
+# STAT1361 Final Project - Spring 2023
 
 ## Final Project
 
